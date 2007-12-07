@@ -80,25 +80,41 @@ class SkinTests(TestCase):
 
 
 
+    def testAddRules(self):
+        t = rendering.rule(Fixture)(lambda: 42)
+        self.assertEqual(self.sheet.add_rules({'t':t, 'x':1}), {'x':1})
+        self.assertEqual(self.sheet[Fixture][-1], t)
 
+    def testRuleRegister(self):
+        class MyRules(self.sheet):
+            @rendering.rule(Fixture)
+            def dummy_rule():
+                pass
+        self.assertEqual(MyRules[Fixture][-1], MyRules.dummy_rule.im_func)
 
+    def testRuleUpdate(self):
+        dummy = lambda: None
+        class MyRules(self.sheet.update):
+            dummy_rule = rendering.rule(Fixture)(dummy)
+        self.assertEqual(self.sheet[Fixture][-1], dummy)
+        
+    def testMixinSingleBase(self):
+        try:
+            class MyRules(self.sheet.update, rendering.Defaults.update): pass
+        except TypeError:
+            pass
+        else:
+            raise AssertionError("Should've detected multiple bases")
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    def testMixinNoNonRules(self):
+        try:
+            class MyRules(self.sheet.update):
+                x = 1
+        except TypeError:
+            pass
+        else:
+            raise AssertionError("Should've detected foreign attributes")
+        
 
 
 

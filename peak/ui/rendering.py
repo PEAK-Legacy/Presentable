@@ -1,21 +1,21 @@
 """Rendering, Style Sheets, and Skins"""
+from new import instancemethod
 
-__all__ = ['StyleSheet', 'Defaults',] # 'rule', 'Renderer'
-
-
-
+__all__ = ['StyleSheet', 'Defaults', 'rule'] #, 'Renderer'
 
 
+_rule_attr = 'peak.ui.rendering rule target classes'
 
 
+def rule(target_type):
+    """Decorate a method as being a renderer for `target_type` instances
 
-
-
-
-
-
-
-
+    This decorator is used in the body of stylesheet classes to decorate
+    """
+    def decorator(func):
+        setattr(func, _rule_attr, getattr(func, _rule_attr, ())+ (target_type,))
+        return func
+    return decorator
 
 
 
@@ -45,7 +45,7 @@ class StyleSheet(type):
     def __init__(self, name, bases, cdict):
         self.__rules = {}
         self.__all = {}
-        # self.add_rules(cdict)
+        self.add_rules(cdict)
 
     def __getitem__(self, key):
         """Get a sequence of rules for type `key`"""
@@ -80,13 +80,14 @@ class StyleSheet(type):
             return all
 
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, rule):
+        """Set rule for type `key` in this style sheet"""
         if key in self.__rules:
             raise KeyError(
                 "Can't set %r[%r]=%r when already set to %r" %
-                (self, key, value, self.__rules[key])
+                (self, key, rule, self.__rules[key])
             )
-        self.__rules[key] = value
+        self.__rules[key] = rule
         self.__erase(key)
 
     def __erase(self, key):
@@ -95,6 +96,30 @@ class StyleSheet(type):
             del self.__all[key]
         for cls in self.__subclasses__():
             cls.__erase(key)
+
+    def update(self):
+        """Subclass this attribute to add rules to this stylesheet"""
+        class update(object):
+            def __class__(__self, name, bases, cdict):
+                if bases != (__self,):
+                    raise TypeError("Mixins must have exactly one base", bases)
+                for k, v in self.add_rules(cdict).iteritems():
+                    if k not in ('__doc__', '__return__', '__module__'):
+                        raise TypeError(
+                            "Mixins must not include non-rule attributes"
+                        )
+        return update()
+
+    update = property(update, doc=update.__doc__)
+
+    def add_rules(self, cdict):
+        """Add the rules in `cdict`, returning a dict of non-rule attrs"""
+        out = cdict.copy()
+        for k, v in cdict.iteritems():
+            for t in getattr(v, _rule_attr, ()):
+                self[t] = v; out.pop(k,v)
+        return out
+
 
     def __contains__(self, key):
         # This is mostly here so accidental 'in' doesn't lock up
@@ -112,9 +137,25 @@ class StyleSheet(type):
                         d[key] = 1
                         yield key
 
-    # def add_rules(self, cdict):
 
-    # update
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
