@@ -1,7 +1,9 @@
 """Rendering, Style Sheets, and Skins"""
+import sys
 from new import instancemethod
+from peak.util.decorators import classy, decorate_class
 
-__all__ = ['StyleSheet', 'Defaults', 'rule'] #, 'Renderer'
+__all__ = ['StyleSheet', 'Defaults', 'rule', 'Rule', 'Renderer']
 
 
 _rule_attr = 'peak.ui.rendering rule target classes'
@@ -18,26 +20,65 @@ def rule(target_type):
     return decorator
 
 
+class HandlerList(list):
+    """A list of handlers"""
+
+    __slots__ = ()
+
+    def __call__(self, *args):
+        """Call each of the handlers with `args`, returning list of results"""
+        return [handler(*args) for handler in self]
+
+    def add(self, item):
+        """Add `item` if not already in the list"""
+        if item not in self:
+            self.append(item)
 
 
 
 
 
 
+class Renderer(object):
+    """Widget layout builder"""
+    output = None
+    args = ()
+    def factory(self):
+        """This will normally be overridden by an instance attribute"""
 
+    def __init__(self, skin, parent, subject):
+        self.skin = self.child_skin = skin
+        self.parent = parent
+        self.subject = subject
+        self.kw = {}
+        self.before_create = HandlerList()
+        self.after_create = HandlerList()
+        self.find_children = HandlerList()
+        self.add_child = HandlerList()
+        self.finish = HandlerList()
 
+    def render(self): #, subject=None):
+        """Render the specified child `subject` and return the result
 
+        If `subject` is None, render this renderer's ``.subject``.
+        """
+        #if subject is not None:
+        #    return self.__class__(self.child_skin, self, subject).render()
+        subject = self.subject
+        for handler in self.skin[subject.__class__]: handler(self, subject)
 
-
-
-
-
-
-
-
-
-
-
+        self.before_create(self, subject)
+        self.output = self.factory(*self.args, **self.kw)
+        self.after_create(self, subject)       
+        child_renderers = [
+            self.__class__(self.child_skin, self, csub)
+            for subs in self.find_children(self, subject) for csub in subs
+        ]
+        for child_r in child_renderers:
+            child_r.render()
+            self.add_child(self, child_r)
+        self.finish(self, subject)
+        return self.output
 
 class StyleSheet(type):
     """Metaclass for style sheets"""
@@ -162,15 +203,55 @@ class StyleSheet(type):
 
 
 
+class Rule(classy):
+    """Base class for rules"""
+
+    def __class_call__(cls, skin, renderer, subject):
+        ignore = '__return__', '__module__', '__doc__', _rule_attr
+        for k, v in cls.__dict__.iteritems():
+            if not isinstance(k,str) or k in ignore:
+                continue
+            old = getattr(renderer, k, None)
+            if isinstance(old, HandlerList):
+                if hasattr(v, '__get__'):
+                    v = v.__get__(skin)
+                old.add(v)
+            else:
+                setattr(renderer, k, v)
+
+    def __class_init__(cls, name, bases, cdict, supr):
+        if 'Rule' in globals():
+            if _rule_attr not in cdict:
+                raise TypeError("Rule class must declare `for_types`")
+            d = {}
+            for c in cls.__mro__[::1]:
+                if c is not Rule and issubclass(c, Rule):
+                    d.update(c.__dict__)
+            cdict.update(d)
+        supr()(cls, name, bases, cdict, supr)
+
+
+def for_types(*types):
+    """Decorate a method as being a renderer for `target_type` instances
+
+    This decorator is used in the body of rule classes to indic
+    """
+    d = sys._getframe(1).f_locals
+    registered = d.get(_rule_attr, ())
+    for t in types:
+        if t not in registered:
+            registered += (t,)
+    d[_rule_attr] = registered
+
+
+
 class Defaults(object):
     """The Root Stylesheet
 
     Subclass this (or other stylesheets) to create more, defining rules in the
     body.
     """
-
     __metaclass__ = StyleSheet
-
     sheet = object.__dict__['__class__']
 
     def __init__(self, **kw):
@@ -184,38 +265,24 @@ class Defaults(object):
                 )
 
     def subskin(self, *bases):
+        """Return a "subclass" of this skin
+
+        The returned skin will be an instance of a stylesheet created by mixing
+        the supplied `bases` and this skin's stylesheet.  It will also be
+        initialized with references to the instance variables of this skin.
+        (Note that this means state will be shared between parent and child if
+        any of those variables refer to mutable objects.)
+        """
         cls = self.sheet
         if bases:
             cls = type(cls)('Subskin', bases+(cls,), {})
         return cls(**self.__dict__)
 
-    # render(self, target) -> Renderer(self, None, target)
+    def render(self, subject):
+        """Render `subject` using this skin"""
+        return Renderer(self, None, subject).render()
 
-    # __getitem__(self, cls): return (im(i,self) for i in self.sheet[cls])
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    def __getitem__(self, key):
+        """Get the rules for `key`"""
+        return [instancemethod(i,self) for i in self.sheet[key]]
 

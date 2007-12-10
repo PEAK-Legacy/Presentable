@@ -1,6 +1,43 @@
 from peak.ui import rendering
 from unittest import TestCase
+import doctest
 class Fixture(object): pass
+try: set
+except NameError: from sets import Set as set
+
+def additional_tests():
+    return doctest.DocFileSuite(
+        'README.txt', optionflags=doctest.ELLIPSIS|doctest.NORMALIZE_WHITESPACE
+    )
+
+class HandlerTests(TestCase):
+
+    def testAddAndCall(self):
+        forty_two = lambda x:x*42
+        twenty_four = lambda x:x*24
+
+        a_list = [forty_two]
+        hl = rendering.HandlerList(a_list)
+        self.assertEqual(hl, a_list)
+
+        hl.add(twenty_four)
+        a_list.append(twenty_four)
+        self.assertEqual(hl, a_list)
+
+        hl.add(forty_two)               # repeated adds are no-op
+        self.assertEqual(hl, a_list)
+        hl.add(twenty_four)
+        self.assertEqual(hl, a_list)       
+
+        self.assertEqual(hl(1), [42, 24])   # call returns list of results
+        self.assertEqual(hl(-1), [-42, -24])
+
+    def testStarArgs(self):
+        hl = rendering.HandlerList([lambda *x: x])
+        for args in (1,2,3), (1,), ():
+            self.assertEqual(hl(*args), [args])
+
+
 
 class SkinTests(TestCase):
 
@@ -42,6 +79,7 @@ class SkinTests(TestCase):
     def testSkinAttrChecking(self):
         self.assertRaises(TypeError, self.sheet, x=1)
 
+
     def testRuleCascading(self):
         sheet = rendering.StyleSheet('demo', (), {})
         self.assertEqual(list(sheet[Fixture]), [])
@@ -80,6 +118,9 @@ class SkinTests(TestCase):
 
 
 
+
+
+
     def testAddRules(self):
         t = rendering.rule(Fixture)(lambda: 42)
         self.assertEqual(self.sheet.add_rules({'t':t, 'x':1}), {'x':1})
@@ -87,9 +128,8 @@ class SkinTests(TestCase):
 
     def testRuleRegister(self):
         class MyRules(self.sheet):
-            @rendering.rule(Fixture)
-            def dummy_rule():
-                pass
+            def dummy_rule(): pass
+            dummy_rule = rendering.rule(Fixture)(dummy_rule)
         self.assertEqual(MyRules[Fixture][-1], MyRules.dummy_rule.im_func)
 
     def testRuleUpdate(self):
